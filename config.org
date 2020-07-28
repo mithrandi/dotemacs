@@ -1,4 +1,36 @@
-#+begin_src emacs-lisp :tangle yes
+#+TITLE: DotEmacs
+#+AUTHOR: Tristan Seligmann
+#+PROPERTY: header-args  :tangle yes
+
+* Table of Content                                                      :TOC:
+- [[#packages][Packages]]
+  - [[#org][Org]]
+- [[#the-remaining-mess][The remaining mess]]
+
+* Packages
+
+** Org
+
+This very file is organized with =org-mode=.
+
+#+BEGIN_SRC emacs-lisp
+  (use-package org
+    :init
+    (setq org-log-done 'time)
+    :hook
+    ((org-mode . toc-org-enable)))
+#+END_SRC
+
+Tired of having to manually update your tables of contents? This package will
+maintain a TOC at the first heading that has a =:TOC:= tag.
+
+#+BEGIN_SRC emacs-lisp
+(use-package toc-org :after org)
+#+END_SRC
+
+* The remaining mess
+
+#+begin_src emacs-lisp
 (require 'bind-key)
 
 (use-package autorevert
@@ -85,9 +117,6 @@
 (use-package multiple-cursors)
 (use-package nginx-mode)
 (use-package nix-mode)
-(use-package org
-  :init
-  (setq org-log-done 'time))
 (use-package ormolu)
 (use-package paredit
   :hook (clojure-mode . paredit-mode))
