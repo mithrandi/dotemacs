@@ -4,14 +4,30 @@
 
 * Table of Content                                                      :TOC:
 - [[#packages][Packages]]
+  - [[#autorevert][Autorevert]]
   - [[#org][Org]]
 - [[#the-remaining-mess][The remaining mess]]
 
 * Packages
 
+** Autorevert
+
+   This reverts unmodified buffers when the file changes externally. Without
+   this they would become modified buffers with the old content.
+
+#+BEGIN_SRC emacs-lisp
+(use-package autorevert
+  :config
+  ;; Also auto refresh dired, but be quiet about it
+  (setq global-auto-revert-non-file-buffers t)
+  (setq auto-revert-verbose nil)
+  :init
+  (global-auto-revert-mode t))
+#+END_SRC
+
 ** Org
 
-This very file is organized with =org-mode=.
+This file is organized with =org-mode=.
 
 #+BEGIN_SRC emacs-lisp
   (use-package org
@@ -21,8 +37,7 @@ This very file is organized with =org-mode=.
     ((org-mode . toc-org-enable)))
 #+END_SRC
 
-Tired of having to manually update your tables of contents? This package will
-maintain a TOC at the first heading that has a =:TOC:= tag.
+Maintain a TOC at the first heading that has a =:TOC:= tag.
 
 #+BEGIN_SRC emacs-lisp
 (use-package toc-org :after org)
@@ -33,13 +48,6 @@ maintain a TOC at the first heading that has a =:TOC:= tag.
 #+begin_src emacs-lisp
 (require 'bind-key)
 
-(use-package autorevert
-  :config
-  ;; Also auto refresh dired, but be quiet about it
-  (setq global-auto-revert-non-file-buffers t)
-  (setq auto-revert-verbose nil)
-  :init
-  (global-auto-revert-mode t))
 (use-package align-cljlet)
 (use-package company
   :diminish company-mode
