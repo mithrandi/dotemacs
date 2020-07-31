@@ -110,7 +110,7 @@
        :bind
        (:map org-mode-map
              ("<" . (lambda () (interactive)
-                      (if (or (region-active-p) (looking-back "^"))
+                      (if (or (region-active-p) (looking-back "^\\s-*" (line-beginning-position)))
                           (hydra-org-template/body)
                         (self-insert-command 1)))))
        :hydra
