@@ -6,6 +6,7 @@
 - [[#bootstrap][Bootstrap]]
   - [[#global-stuff][Global stuff]]
   - [[#hydra][Hydra]]
+  - [[#midnight-mode][Midnight mode]]
 - [[#packages][Packages]]
   - [[#autorevert][Autorevert]]
   - [[#org][Org]]
@@ -65,6 +66,16 @@
      (use-package hydra)
      (use-package use-package-hydra
        :after hydra)
+   #+end_src
+
+** Midnight mode
+
+   Clean up idle buffers at midnight.
+
+   #+begin_src emacs-lisp
+     (use-package midnight
+       :defer 1000
+       :init (midnight-mode t))
    #+end_src
 
 * Packages
@@ -266,10 +277,6 @@
       :bind ("C-x g" . magit-status))
     (use-package forge
       :after (magit))
-    (use-package midnight
-      :defer 1000
-      :init (midnight-mode t))
-    (use-package multiple-cursors)
     (use-package nix-mode)
     (use-package ormolu)
     (use-package paredit
