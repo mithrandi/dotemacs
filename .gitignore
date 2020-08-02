@@ -2,4 +2,5 @@
 !.gitignore
 !config.org
 !custom.el
+!early-init.el
 !init.el

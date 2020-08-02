@@ -5,35 +5,75 @@
 * Table of Content                                                      :TOC:
 - [[#bootstrap][Bootstrap]]
   - [[#global-stuff][Global stuff]]
+  - [[#themes][Themes]]
+  - [[#modeline][Modeline]]
   - [[#hydra][Hydra]]
   - [[#midnight-mode][Midnight mode]]
+  - [[#line-numbers][Line numbers]]
+  - [[#secrets][Secrets]]
 - [[#packages][Packages]]
   - [[#autorevert][Autorevert]]
   - [[#org][Org]]
   - [[#autocomplete][Autocomplete]]
   - [[#debian-stuff][Debian stuff]]
   - [[#magit][Magit]]
+  - [[#which-key][=which-key=]]
+  - [[#whitespace][Whitespace]]
+  - [[#ivy][Ivy]]
+  - [[#projectile][Projectile]]
 - [[#languages][Languages]]
   - [[#lsp][LSP]]
-  - [[#clojure][Clojure]]
+  - [[#lisps][Lisps]]
+  - [[#javascript][JavaScript]]
+  - [[#css][CSS]]
+  - [[#go][Go]]
   - [[#misc-modes][Misc modes]]
+  - [[#flycheck][Flycheck]]
 - [[#the-remaining-mess][The remaining mess]]
 
 * Bootstrap
 
 ** Global stuff
 
-*** Garbage-collect on focus-out.
+*** Garbage collector and other tweaks
 
     #+BEGIN_SRC emacs-lisp
+      ;; (add-to-list 'default-frame-alist '(menu-bar-lines . 0))
+      (add-to-list 'default-frame-alist '(tool-bar-lines . 0))
+      ;; (add-to-list 'default-frame-alist '(vertical-scroll-bars))
+      (setq frame-inhibit-implied-resize t
+            initial-major-mode 'fundamental-mode
+            gc-cons-threshold most-positive-fixnum)
+      (use-package gcmh
+        :diminish
+        :defer 5
+        :init
+        (setq gcmh-idle-delay 5
+              gcmh-high-cons-threshold (* 16 1024 1024))
+        :config
+        (gcmh-mode 1))
       (add-hook 'focus-out-hook #'garbage-collect)
+      (add-to-list 'initial-frame-alist '(fullscreen . maximized))
     #+END_SRC
 
-*** TODO Enable gcmh
+*** Defaults
+
+    #+begin_src emacs-lisp
+      (setq-default auto-save-default nil
+                    create-lockfiles nil
+                    fill-column 79
+                    gnutls-verify-error t
+                    indent-tabs-mode nil
+                    make-backup-files nil
+                    require-final-newline 'visit
+                    sentence-end-double-space nil
+                    show-trailing-whitespace t)
+    #+end_src
 
 *** Enable keybinding
 
     #+BEGIN_SRC emacs-lisp
+      (use-package diminish)
       (require 'bind-key)
     #+END_SRC
 
@@ -45,7 +85,7 @@
       (use-package exec-path-from-shell
         :config
         (setq exec-path-from-shell-check-startup-files nil
-              exec-path-from-shell-variables '("PATH")
+              exec-path-from-shell-variables '("PATH" "GOPATH")
               exec-path-from-shell-arguments nil)
         (exec-path-from-shell-initialize))
     #+END_SRC
@@ -58,6 +98,40 @@
       (when window-system
         (add-hook 'after-init-hook 'server-start t))
     #+end_src
+
+*** Desktop save / restore
+
+    #+begin_src emacs-lisp
+      (use-package desktop
+        :demand
+        :config
+        (desktop-save-mode 1))
+    #+end_src
+
+** Themes
+
+   #+begin_src emacs-lisp
+     (use-package doom-themes
+       :config
+       (setq doom-themes-enable-bold t
+             doom-themes-enable-italic t)
+       (load-theme 'doom-solarized-dark t)
+       (doom-themes-visual-bell-config)
+       (doom-themes-neotree-config)
+       (setq doom-themes-treemacs-theme "doom-colors")
+       (doom-themes-treemacs-config)
+       (doom-themes-org-config))
+   #+end_src
+
+** Modeline
+
+   #+begin_src emacs-lisp
+     (use-package doom-modeline
+       :demand
+       :config
+       (setq doom-modeline-minor-modes t)
+       (doom-modeline-mode 1))
+   #+end_src
 
 ** Hydra
 
@@ -75,8 +149,27 @@
 
    #+begin_src emacs-lisp
      (use-package midnight
-       :defer 1000
-       :init (midnight-mode t))
+       :defer 5
+       :config
+       (midnight-mode t)
+       (setq clean-buffer-list-delay-general 1))
+   #+end_src
+
+** Line numbers
+
+   #+begin_src emacs-lisp
+     (global-display-line-numbers-mode 1)
+   #+end_src
+
+** Secrets
+
+   #+begin_src emacs-lisp
+     (use-package secrets)
+     (use-package auth-source
+       :after secrets
+       :custom
+       (auth-sources
+        '("secrets:Login" "~/.authinfo" "~/.authinfo.gpg" "~/.netrc")))
    #+end_src
 
 * Packages
@@ -177,7 +270,7 @@
    #+begin_src emacs-lisp
      (use-package company
        :diminish company-mode
-       :defer 1000
+       :defer 5
        :config
        (global-company-mode 1)
        (setq company-minimum-prefix-length 1
@@ -208,7 +301,17 @@
 
    #+begin_src emacs-lisp
      (use-package magit
-       :bind ("C-x g" . magit-status))
+       :bind ("C-x g" . magit-status)
+       :custom
+       (magit-branch-prefer-remote-upstream (quote ("master")))
+       (magit-diff-arguments (quote ("--no-ext-diff" "--stat" "-M20%" "-C20%")))
+       (magit-diff-section-arguments (quote ("--no-ext-diff" "-M20%" "-C20%")))
+       (magit-fetch-arguments (quote ("--prune")))
+       (magit-wip-after-apply-mode t)
+       (magit-wip-after-save-mode t)
+       (magit-wip-before-change-mode t))
+     (use-package forge
+       :after magit)
      (use-package smerge-mode
        :config
        (defhydra smerge-hydra
@@ -249,6 +352,78 @@
                                           (smerge-hydra/body)))))
    #+end_src
 
+** =which-key=
+
+   A minor mode that shows possible binds midway through a sequence.
+
+   #+begin_src emacs-lisp
+     (use-package which-key
+       :diminish
+       :defer 5
+       :config
+       (which-key-mode 1))
+   #+end_src
+
+** Whitespace
+
+   Highlight and clean up excess whitespace.
+
+   #+begin_src emacs-lisp
+     (use-package whitespace-cleanup-mode
+       :defer 5
+       :diminish
+       (whitespace-mode
+        whitespace-cleanup-mode
+        global-whitespace-mode
+        global-whitespace-cleanup-mode)
+       :init
+       (setq whitespace-cleanup-mode-only-if-initially-clean nil
+             whitespace-line-column 80
+             whitespace-style '(face lines-tail))
+       :config
+       (global-whitespace-mode)
+       (global-whitespace-cleanup-mode))
+   #+end_src
+
+** Ivy
+
+   Completion stuff.
+
+   #+begin_src emacs-lisp
+     (use-package ivy
+       :diminish ivy-mode
+       :defer 5
+       :config
+       (setq ivy-use-virtual-buffers t
+             ivy-count-format "(%d/%d) ")
+       (ivy-mode 1))
+     (use-package ivy-hydra
+       :after hydra)
+     (use-package counsel
+       :diminish counsel-mode
+       :after ivy
+       :custom
+       (counsel-outline-face-style 'org)
+       (counsel-outline-path-separator " / ")
+       :config
+       (counsel-mode 1))
+     (use-package counsel-projectile
+       :after ivy
+       :config
+       (counsel-projectile-mode 1))
+   #+end_src
+
+** Projectile
+
+   "Project" management.
+
+   #+begin_src emacs-lisp
+     (use-package projectile
+       :bind-keymap
+       ("s-p" . projectile-command-map)
+       ("C-c p" . projectile-command-map))
+   #+end_src
+
 * Languages
 
 ** LSP
@@ -258,18 +433,37 @@
     #+begin_src emacs-lisp
       (use-package lsp-mode
         :init (setq lsp-keymap-prefix "C-l")
-        :hook ((haskell-mode . lsp)
-               (lsp-mode . lsp-enable-which-key-integration))
-        :commands lsp)
+        :hook (lsp-mode . lsp-enable-which-key-integration)
+        :commands lsp
+        :custom
+        (lsp-file-watch-ignored
+         (quote
+          ("[/\\\\]\\.git$" "[/\\\\]\\.hg$" "[/\\\\]\\.bzr$" "[/\\\\]_darcs$" "[/\\\\]\\.svn$" "[/\\\\]_FOSSIL_$" "[/\\\\]\\.idea$" "[/\\\\]\\.ensime_cache$" "[/\\\\]\\.eunit$" "[/\\\\]node_modules$" "[/\\\\]\\.fslckout$" "[/\\\\]\\.tox$" "[/\\\\]\\.stack-work$" "[/\\\\]\\.bloop$" "[/\\\\]\\.metals$" "[/\\\\]target$" "[/\\\\]\\.deps$" "[/\\\\]build-aux$" "[/\\\\]autom4te.cache$" "[/\\\\]\\.reference$" "[/\\\\]dist$" "[/\\\\]dist-newstyle$")))
+        (lsp-prefer-flymake nil))
       (use-package lsp-ui
-        :after lsp-mode
+        :after (flycheck lsp-mode)
         :diminish
         :config
         ;; Dumb hack until h-l-s supports hlint; breaks everything !Haskell
         (flycheck-add-next-checker 'lsp-ui 'haskell-hlint)
         (setq lsp-ui-doc-use-webkit t)
-        :commands lsp-ui-mode)
+        :commands lsp-ui-mode
+        :custom
+        (lsp-ui-doc-header nil)
+        (lsp-ui-doc-include-signature nil)
+        (lsp-ui-doc-position (quote at-point))
+        (lsp-ui-doc-use-childframe t)
+        (lsp-ui-doc-use-webkit nil)
+        (lsp-ui-flycheck-enable t)
+        (lsp-ui-sideline-ignore-duplicate t)
+        (lsp-ui-sideline-show-hover t))
+      (use-package haskell-mode
+        :mode "\\.l?hs\\'"
+        :custom
+        (haskell-font-lock-symbols t)
+        (haskell-indentation-show-indentations-after-eol nil))
       (use-package lsp-haskell
+        :hook (haskell-mode . lsp)
         :config
         (setq lsp-haskell-process-path-hie "haskell-language-server")
         (setq lsp-haskell-process-args-hie '())
@@ -285,12 +479,56 @@
         :custom (company-lsp-cache-candidates 'auto))
     #+end_src
 
-** TODO Clojure
-
-   Need to add LSP stuff.
+** Lisps
 
    #+begin_src emacs-lisp
-     (use-package clojure-mode)
+     (use-package lispy
+       :hook
+       ((emacs-lisp-mode . lispy-mode)
+        (clojure-mode . lispy-mode)))
+     (use-package rainbow-delimiters
+       :hook ((emacs-lisp-mode . rainbow-delimiters-mode)
+              (clojure-mode . rainbow-delimiters-mode)))
+   #+end_src
+
+*** TODO Clojure
+
+    Need to add LSP stuff.
+
+    #+begin_src emacs-lisp
+      (use-package clojure-mode
+        :mode "\\.clj\\'")
+    #+end_src
+
+** JavaScript
+
+   #+begin_src emacs-lisp
+     ;; (use-package js2-mode
+     ;;   :mode "\\.js\\'")
+     (use-package web-mode
+       :mode "\\.jsx?\\'"
+       :config
+       (setq web-mode-content-types-alist
+             '(("jsx" . "\\.jsx?\\'")))
+       :custom
+       (web-mode-code-indent-offset 2)
+       (web-mode-markup-indent-offset 2))
+   #+end_src
+
+** CSS
+
+   #+begin_src emacs-lisp
+     (use-package sass-mode
+       :mode "\\.sass\\'")
+     (use-package scss-mode
+       :mode "\\.scss\\'")
+   #+end_src
+
+** Go
+
+   #+begin_src emacs-lisp
+     (use-package go-mode
+       :mode "\\.go\\'")
    #+end_src
 
 ** Misc modes
@@ -298,106 +536,82 @@
    A bunch of simple major modes.
 
    #+begin_src emacs-lisp
-     (use-package csv-mode)
-     (use-package dockerfile-mode)
-     (use-package fish-mode)
-     (use-package markdown-mode)
-     (use-package puppet-mode)
-     (use-package toml-mode)
-     (use-package yaml-mode)
+     (use-package csv-mode
+       :mode "\\.csv\\'")
+     (use-package dockerfile-mode
+       :mode "Dockerfile\\'")
+     (use-package fish-mode
+       :mode "\\.fish\\'")
+     (use-package markdown-mode
+       :mode "\\.md\\'")
+     (use-package toml-mode
+       :mode "\\.toml\\'")
+     (use-package yaml-mode
+       :mode "\\.ya?ml\\'")
+   #+end_src
+
+** Flycheck
+
+   #+begin_src emacs-lisp
+     (use-package flycheck
+       :hook
+       ((python-mode . (lambda ()
+                         (flycheck-select-checker 'python-flake8)
+                         (flycheck-mode 1)))
+        (emacs-lisp-mode . flycheck-mode)
+        (haskell-mode . flycheck-mode)
+        (web-mode . (lambda ()
+                      (when (equal web-mode-content-type "jsx")
+                        (flycheck-select-checker 'javascript-eslint)
+                        (flycheck-mode 1))))
+        (clojure-mode . flycheck-mode)
+        (go-mode . flycheck-mode)
+        (yaml-mode . flycheck-mode))
+       :config
+       (flycheck-add-mode 'javascript-eslint 'web-mode)
+       (flycheck-define-checker python-twistedchecker
+         "A Python syntax and style checker using twistedchecker."
+         :command ("twistedchecker"
+                   ;; Need `source-inplace' for relative imports (e.g. `from .foo
+                   ;; import bar'), see https://github.com/flycheck/flycheck/issues/280
+                   source-inplace)
+         :error-filter
+         (lambda (errors)
+           (flycheck-sanitize-errors (flycheck-increment-error-columns errors)))
+         :error-patterns
+         ((error line-start (or "E" "F") (id (one-or-more (not (any ":")))) ":"
+                 (zero-or-more " ") line "," column ":" (message) line-end)
+          (warning line-start (or "W" "R" "C") (id (one-or-more (not (any ":")))) ":"
+                   (zero-or-more " ") line "," column ":" (message) line-end))
+         :modes 'python-mode)
+       (add-to-list 'flycheck-checkers 'python-twistedchecker 'append)
+       (flycheck-add-next-checker 'python-twistedchecker 'python-flake8)
+       :custom
+       (flycheck-disabled-checkers
+        '(python-pylint javascript-jshint haskell-ghc haskell-stack-ghc))
+       (flycheck-eslintrc ".eslintrc.yaml")
+       (flycheck-highlighting-mode (quote columns))
+       (flycheck-hlintrc ".hlint.yaml"))
    #+end_src
 
 * The remaining mess
 
   #+begin_src emacs-lisp
     (use-package dash)
-    (use-package drag-stuff)
-    (use-package elixir-mode)
-    (use-package find-file-in-repository
-      :bind ("C-x C-f" . find-file-in-repository))
-    (use-package flycheck)
-    (use-package flycheck-pyflakes)
-    (use-package go-mode)
-    (use-package haskell-mode)
-    (use-package htmlize)
-    (use-package js2-mode)
-    (use-package forge
-      :after (magit))
     (use-package nix-mode)
     (use-package ormolu)
-    (use-package paredit
-      :hook (clojure-mode . paredit-mode))
-    (use-package popwin)
-    (use-package powerline)
     (use-package prodigy)
-    (use-package projectile)
     (use-package py-isort)
     (use-package python-docstring
       :hook (python-mode . python-docstring-mode))
-    (use-package rainbow-delimiters
-      :hook (clojure-mode . rainbow-delimiters-mode))
-    (use-package s)
-    (use-package sass-mode)
-    (use-package scss-mode)
-    (use-package smartparens)
-    (use-package smex)
-    (use-package secrets)
-    (use-package solarized-theme)
     (use-package terraform-mode
       :config
       (add-hook 'terraform-mode-hook #'terraform-format-on-save-mode))
-    (use-package web-mode)
-    (use-package which-key
-      :diminish
-      :config (which-key-mode))
-    (use-package whitespace-cleanup-mode
-      :diminish whitespace-cleanup-mode
-      :init
-      (setq whitespace-cleanup-mode-only-if-initially-clean nil
-            whitespace-line-column 80
-            whitespace-style '(face lines-tail))
-      :config
-      (global-whitespace-mode)
-      (global-whitespace-cleanup-mode))
     (use-package yasnippet)
 
-    (setenv "GOPATH" "$HOME" t)
-
     (put 'test-case-name 'safe-local-variable 'symbolp)
-    (add-to-list 'initial-frame-alist '(fullscreen . maximized))
 
     (setq python-environment-directory "~/deployment/virtualenvs")
-
-
-    (add-to-list 'auto-mode-alist '("\\.jsx?\\'" . web-mode))
-    (setq web-mode-content-types-alist
-          '(("jsx" . "\\.jsx?\\'")))
-    (flycheck-add-mode 'javascript-eslint 'web-mode)
-    (add-hook 'web-mode-hook
-              (lambda ()
-                (when (equal web-mode-content-type "jsx")
-                  ;; enable flycheck
-                  (flycheck-select-checker 'javascript-eslint)
-                  (flycheck-mode))))
-    (flycheck-define-checker python-twistedchecker
-      "A Python syntax and style checker using twistedchecker."
-      :command ("twistedchecker"
-                ;; Need `source-inplace' for relative imports (e.g. `from .foo
-                ;; import bar'), see https://github.com/flycheck/flycheck/issues/280
-                source-inplace)
-      :error-filter
-      (lambda (errors)
-        (flycheck-sanitize-errors (flycheck-increment-error-columns errors)))
-      :error-patterns
-      ((error line-start (or "E" "F") (id (one-or-more (not (any ":")))) ":"
-              (zero-or-more " ") line "," column ":" (message) line-end)
-       (warning line-start (or "W" "R" "C") (id (one-or-more (not (any ":")))) ":"
-                (zero-or-more " ") line "," column ":" (message) line-end))
-      :modes 'python-mode)
-    (add-to-list 'flycheck-checkers 'python-twistedchecker 'append)
-    (flycheck-add-next-checker 'python-twistedchecker 'python-flake8)
-    (add-hook 'python-mode-hook
-              (lambda () (flycheck-select-checker 'python-flake8)))
   #+end_src
 
 *** [[file:custom.el][custom.el]]
