@@ -1,5 +1,8 @@
 ;; Bootstrap just enough to load configuration from a "literate" org-mode file
 
+(setq straight-cache-autoloads t
+      straight-fix-flycheck t)
+
 (defvar bootstrap-version)
 (let ((bootstrap-file
        (expand-file-name "straight/repos/straight.el/bootstrap.el" user-emacs-directory))

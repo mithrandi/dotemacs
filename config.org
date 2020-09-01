@@ -9,7 +9,7 @@
   - [[#modeline][Modeline]]
   - [[#hydra][Hydra]]
   - [[#midnight-mode][Midnight mode]]
-  - [[#line-numbers][Line numbers]]
+  - [[#line--column-numbers][Line / column numbers]]
   - [[#secrets][Secrets]]
 - [[#packages][Packages]]
   - [[#autorevert][Autorevert]]
@@ -29,6 +29,7 @@
   - [[#go][Go]]
   - [[#misc-modes][Misc modes]]
   - [[#flycheck][Flycheck]]
+  - [[#python][Python]]
 - [[#the-remaining-mess][The remaining mess]]
 
 * Bootstrap
@@ -43,7 +44,8 @@
       ;; (add-to-list 'default-frame-alist '(vertical-scroll-bars))
       (setq frame-inhibit-implied-resize t
             initial-major-mode 'fundamental-mode
-            gc-cons-threshold most-positive-fixnum)
+            gc-cons-threshold most-positive-fixnum
+            read-process-output-max (* 1024 1024))
       (use-package gcmh
         :diminish
         :defer 5
@@ -70,6 +72,15 @@
                     show-trailing-whitespace t)
     #+end_src
 
+*** Async byte-comp
+
+    #+begin_src emacs-lisp
+      (use-package async
+        :demand
+        :config
+        (async-bytecomp-package-mode 1))
+    #+end_src
+
 *** Enable keybinding
 
     #+BEGIN_SRC emacs-lisp
@@ -85,7 +96,7 @@
       (use-package exec-path-from-shell
         :config
         (setq exec-path-from-shell-check-startup-files nil
-              exec-path-from-shell-variables '("PATH" "GOPATH")
+              exec-path-from-shell-variables '("PATH" "GOPATH" "DEBEMAIL" "DEBFULLNAME")
               exec-path-from-shell-arguments nil)
         (exec-path-from-shell-initialize))
     #+END_SRC
@@ -155,10 +166,11 @@
        (setq clean-buffer-list-delay-general 1))
    #+end_src
 
-** Line numbers
+** Line / column numbers
 
    #+begin_src emacs-lisp
-     (global-display-line-numbers-mode 1)
+     (global-display-line-numbers-mode t)
+     (column-number-mode t)
    #+end_src
 
 ** Secrets
@@ -293,6 +305,11 @@
        ("\\`/usr/share/doc/.*/copyright" . debian-copyright-mode)
        ("debian/.*README.*Debian$" . readme-debian-mode)
        ("^/usr/share/doc/.*/README.*Debian.*$" . readme-debian-mode))
+     (straight-use-package '(debian-devel :local-repo "~/src/github.com/mithrandi/debian-devel-el"
+                                          :files ("debian-devel/*.el")))
+     (use-package debian-devel
+       :straight nil
+       :bind ("C-c d" . dd-dispatch))
    #+end_src
 
 ** Magit
@@ -369,19 +386,26 @@
    Highlight and clean up excess whitespace.
 
    #+begin_src emacs-lisp
-     (use-package whitespace-cleanup-mode
+     (use-package whitespace
        :defer 5
        :diminish
        (whitespace-mode
-        whitespace-cleanup-mode
-        global-whitespace-mode
+        global-whitespace-mode)
+       :config
+       (setq whitespace-line-column 80
+             whitespace-style '(face lines-tail))
+       (global-whitespace-mode)
+       :hook
+       (python-mode . (lambda ()
+                        (setq-local whitespace-line-column 88))))
+     (use-package whitespace-cleanup-mode
+       :defer 5
+       :diminish
+       (whitespace-cleanup-mode
         global-whitespace-cleanup-mode)
        :init
-       (setq whitespace-cleanup-mode-only-if-initially-clean nil
-             whitespace-line-column 80
-             whitespace-style '(face lines-tail))
+       (setq whitespace-cleanup-mode-only-if-initially-clean nil)
        :config
-       (global-whitespace-mode)
        (global-whitespace-cleanup-mode))
    #+end_src
 
@@ -444,8 +468,6 @@
         :after (flycheck lsp-mode)
         :diminish
         :config
-        ;; Dumb hack until h-l-s supports hlint; breaks everything !Haskell
-        (flycheck-add-next-checker 'lsp-ui 'haskell-hlint)
         (setq lsp-ui-doc-use-webkit t)
         :commands lsp-ui-mode
         :custom
@@ -465,11 +487,8 @@
       (use-package lsp-haskell
         :hook (haskell-mode . lsp)
         :config
-        (setq lsp-haskell-process-path-hie "haskell-language-server")
-        (setq lsp-haskell-process-args-hie '())
-        ;; Comment/uncomment this line to see interactions between lsp client/server.
-        ;;(setq lsp-log-io t)
-        )
+        (setq lsp-haskell-process-path-hie "haskell-language-server-wrapper")
+        (setq lsp-haskell-process-args-hie '()))
       (use-package lsp-treemacs
         :commands lsp-treemacs-errors-list)
       (use-package company-lsp
@@ -569,23 +588,6 @@
         (yaml-mode . flycheck-mode))
        :config
        (flycheck-add-mode 'javascript-eslint 'web-mode)
-       (flycheck-define-checker python-twistedchecker
-         "A Python syntax and style checker using twistedchecker."
-         :command ("twistedchecker"
-                   ;; Need `source-inplace' for relative imports (e.g. `from .foo
-                   ;; import bar'), see https://github.com/flycheck/flycheck/issues/280
-                   source-inplace)
-         :error-filter
-         (lambda (errors)
-           (flycheck-sanitize-errors (flycheck-increment-error-columns errors)))
-         :error-patterns
-         ((error line-start (or "E" "F") (id (one-or-more (not (any ":")))) ":"
-                 (zero-or-more " ") line "," column ":" (message) line-end)
-          (warning line-start (or "W" "R" "C") (id (one-or-more (not (any ":")))) ":"
-                   (zero-or-more " ") line "," column ":" (message) line-end))
-         :modes 'python-mode)
-       (add-to-list 'flycheck-checkers 'python-twistedchecker 'append)
-       (flycheck-add-next-checker 'python-twistedchecker 'python-flake8)
        :custom
        (flycheck-disabled-checkers
         '(python-pylint javascript-jshint haskell-ghc haskell-stack-ghc))
@@ -594,24 +596,49 @@
        (flycheck-hlintrc ".hlint.yaml"))
    #+end_src
 
+** Python
+
+   #+begin_src emacs-lisp
+     (use-package python
+       :mode ("\\.py\\'" . python-mode)
+       :interpreter ("python" . python-mode))
+     (use-package blacken
+       :delight
+       :hook (python-mode . blacken-mode)
+       :custom (blacken-only-if-project-is-blackened t))
+     (use-package pyvenv
+       :hook (python-mode . (lambda ()
+                              (let ((venv (f-expand
+                                           (projectile-project-name)
+                                           "~/deployment/virtualenvs/")))
+                                (when (f-dir? venv)
+                                  (setq-local pyvenv-activate venv)))
+                              (pyvenv-mode t)))
+       :config
+       (pyvenv-tracking-mode t)
+       (setq python-environment-directory "~/deployment/virtualenvs")
+       :custom
+       (pyvenv-mode-line-indicator
+        '(pyvenv-virtual-env-name ("[venv:" pyvenv-virtual-env-name "]"))))
+     (use-package py-isort)
+     (use-package python-docstring
+       :hook (python-mode . python-docstring-mode))
+     (use-package lsp-pyright
+       :hook (python-mode . lsp))
+   #+end_src
+
 * The remaining mess
 
   #+begin_src emacs-lisp
     (use-package dash)
     (use-package nix-mode)
     (use-package ormolu)
-    (use-package prodigy)
-    (use-package py-isort)
-    (use-package python-docstring
-      :hook (python-mode . python-docstring-mode))
     (use-package terraform-mode
       :config
       (add-hook 'terraform-mode-hook #'terraform-format-on-save-mode))
     (use-package yasnippet)
 
     (put 'test-case-name 'safe-local-variable 'symbolp)
-
-    (setq python-environment-directory "~/deployment/virtualenvs")
   #+end_src
 
 *** [[file:custom.el][custom.el]]
