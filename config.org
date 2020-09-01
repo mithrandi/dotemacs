@@ -458,7 +458,7 @@
       (use-package lsp-mode
         :init (setq lsp-keymap-prefix "C-l")
         :hook (lsp-mode . lsp-enable-which-key-integration)
-        :commands lsp
+        :commands (lsp lsp-deferred)
         :custom
         (lsp-file-watch-ignored
          (quote
@@ -485,7 +485,7 @@
         (haskell-font-lock-symbols t)
         (haskell-indentation-show-indentations-after-eol nil))
       (use-package lsp-haskell
-        :hook (haskell-mode . lsp)
+        :hook (haskell-mode . lsp-deferred)
         :config
         (setq lsp-haskell-process-path-hie "haskell-language-server-wrapper")
         (setq lsp-haskell-process-args-hie '()))
@@ -624,7 +624,9 @@
      (use-package python-docstring
        :hook (python-mode . python-docstring-mode))
      (use-package lsp-pyright
-       :hook (python-mode . lsp))
+       :hook (python-mode . (lambda ()
+                              (require 'lsp-pyright)
+                              (lsp-deferred))))
    #+end_src
 
 * The remaining mess
