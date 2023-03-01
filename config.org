@@ -30,6 +30,7 @@
   - [[#misc-modes][Misc modes]]
   - [[#flycheck][Flycheck]]
   - [[#python][Python]]
+  - [[#dhall][Dhall]]
 - [[#the-remaining-mess][The remaining mess]]
 
 * Bootstrap
@@ -113,10 +114,24 @@
 *** Desktop save / restore
 
     #+begin_src emacs-lisp
-      (use-package desktop
-        :demand
-        :config
-        (desktop-save-mode 1))
+      (use-package emacs
+        :custom
+        (desktop-save t)
+        (desktop-load-locked-desktop t)
+        :init
+        (defun rgr/restore-desktop()
+          (when (fboundp 'alert)
+            (alert (message (format "loading desktop from %s" desktop-path))))
+          ;;I include the run-with-timer despite being able to get this to work without as it's a timing
+          ;;issue and a little delay does no one any harm
+          (run-at-time "1" nil (lambda()
+                                 (desktop-read)
+                                 (desktop-save-mode 1))))
+        (add-hook 'emacs-startup-hook
+                  (lambda()
+                    (if (daemonp)
+                        (add-hook 'server-after-make-frame-hook 'rgr/restore-desktop)
+                      (rgr/restore-desktop)))))
     #+end_src
 
 ** Themes
@@ -137,6 +152,8 @@
 ** Modeline
 
    #+begin_src emacs-lisp
+     (use-package all-the-icons
+       :if (display-graphic-p))
      (use-package doom-modeline
        :demand
        :config
@@ -329,6 +346,8 @@
        (magit-wip-before-change-mode t))
      (use-package forge
        :after magit)
+     (use-package magit-delta
+       :hook (magit-mode . magit-delta-mode))
      (use-package smerge-mode
        :config
        (defhydra smerge-hydra
@@ -455,9 +474,18 @@
    LSP is a standardized protocol for editors to connect to IDE-like backends.
 
     #+begin_src emacs-lisp
+      (use-package yasnippet
+        :config
+        (yas-global-mode 1))
       (use-package lsp-mode
         :init (setq lsp-keymap-prefix "C-l")
-        :hook (lsp-mode . lsp-enable-which-key-integration)
+        :hook
+        ((lsp-mode . lsp-enable-which-key-integration)
+         (before-save . (lambda ()
+                          (when (bound-and-true-p lsp-mode)
+                            (lsp-organize-imports)
+                            (lsp-format-buffer)))))
+        :config (define-key lsp-mode-map (kbd "C-l") lsp-command-map)
         :commands (lsp lsp-deferred)
         :custom
         (lsp-file-watch-ignored
@@ -485,10 +513,14 @@
         (haskell-font-lock-symbols t)
         (haskell-indentation-show-indentations-after-eol nil))
       (use-package lsp-haskell
-        :hook (haskell-mode . lsp-deferred)
+        :hook
+        ((haskell-mode . lsp-deferred)
+         (haskell-literate-mode . lsp-deferred))
         :config
         (setq lsp-haskell-process-path-hie "haskell-language-server-wrapper")
-        (setq lsp-haskell-process-args-hie '()))
+        (setq lsp-haskell-process-args-hie '())
+        (with-eval-after-load 'lsp-mode
+          (lsp-register-custom-settings '(("haskell.maxCompletions" 200)))))
       (use-package lsp-treemacs
         :commands lsp-treemacs-errors-list)
       (use-package company-lsp
@@ -629,6 +661,17 @@
                               (lsp-deferred))))
    #+end_src
 
+** Dhall
+
+   #+begin_src emacs-lisp
+     (use-package dhall-mode
+       :config
+       (setq
+        ;; header-line is obsoleted by lsp-mode
+        dhall-use-header-line nil)
+       :hook (dhall-mode . lsp-deferred))
+   #+end_src
+
 * The remaining mess
 
   #+begin_src emacs-lisp
@@ -638,7 +681,6 @@
     (use-package terraform-mode
       :config
       (add-hook 'terraform-mode-hook #'terraform-format-on-save-mode))
-    (use-package yasnippet)
 
     (put 'test-case-name 'safe-local-variable 'symbolp)
   #+end_src
