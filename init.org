@@ -1,14 +1,24 @@
+;-*- eval: (load-file "./init-dev.el");   -*-
 #+TITLE: DotEmacs
 #+AUTHOR: Tristan Seligmann
-#+PROPERTY: header-args  :tangle yes
+#+options: ^:{} html-postamble:nil
+#+property: header-args :mkdirp yes :tangle yes :tangle-mode: #o444 :results silent :noweb yes
 
 * Table of Content                                                      :TOC:
 - [[#bootstrap][Bootstrap]]
-  - [[#global-stuff][Global stuff]]
+  - [[#early-init][early-init]]
+  - [[#lexical-binding][lexical binding]]
+  - [[#profiling][profiling]]
+  - [[#elpaca][Elpaca]]
+  - [[#packaging][packaging]]
+- [[#custom-variables][Custom variables]]
+  - [[#filespaths][files/paths]]
+  - [[#files][files]]
+  - [[#hydra][Hydra]]
   - [[#themes][Themes]]
   - [[#modeline][Modeline]]
-  - [[#hydra][Hydra]]
   - [[#midnight-mode][Midnight mode]]
+  - [[#editor-config][editor-config]]
   - [[#line--column-numbers][Line / column numbers]]
   - [[#secrets][Secrets]]
 - [[#packages][Packages]]
@@ -21,6 +31,7 @@
   - [[#whitespace][Whitespace]]
   - [[#ivy][Ivy]]
   - [[#projectile][Projectile]]
+  - [[#direnv][direnv]]
 - [[#languages][Languages]]
   - [[#lsp][LSP]]
   - [[#lisps][Lisps]]
@@ -31,21 +42,202 @@
   - [[#flycheck][Flycheck]]
   - [[#python][Python]]
   - [[#dhall][Dhall]]
+  - [[#nix][nix]]
+  - [[#auto-tangle-mode][auto-tangle-mode]]
 - [[#the-remaining-mess][The remaining mess]]
 
 * Bootstrap
+** early-init
+:PROPERTIES:
+:header-args: :tangle-mode o444 :results silent :tangle ~/.emacs.d/early-init.el
+:END:
+Emacs 27.0 introduced an early-init file. It allows customization before package and UI initialization.
+#+begin_src emacs-lisp :lexical t
+;;; early-init.el --- Emacs pre package.el & GUI configuration -*- lexical-binding: t; -*-
+;;; Code:
+#+end_src
 
-** Global stuff
+#+begin_src emacs-lisp :lexical t
+(setq package-enable-at-startup nil)
+(setq inhibit-default-init nil)
+(setq native-comp-async-report-warnings-errors nil)
+(advice-add #'package--ensure-init-file :override #'ignore)
+#+end_src
 
+*** file-name-handler-alist
+Skipping a bunch of regular expression searching in the =file-name-handler-alist= should improve start time.
+#+begin_src emacs-lisp :lexical t
+(defvar default-file-name-handler-alist file-name-handler-alist)
+(setq file-name-handler-alist nil)
+#+end_src
+
+*** Garbage Collection
+=gc-cons-threshold= (800 KB) and =gc-cons-percentage= (0.1) control when the Emacs garbage collector can kick in.
+Temporarily turning these off during init should decrease startup time.
+#+begin_src emacs-lisp :lexical t
+  (setq gc-cons-threshold most-positive-fixnum
+        gc-cons-percentage 1)
+
+  (defun +gc-after-focus-change ()
+    "Run GC when frame loses focus."
+    (run-with-idle-timer
+     5 nil
+     (lambda () (unless (frame-focus-state) (garbage-collect)))))
+
+  (defun +reset-init-values ()
+    (run-with-idle-timer
+     1 nil
+     (lambda ()
+       (setq file-name-handler-alist default-file-name-handler-alist)
+       (message "file-name-handler-alist restored")
+       (when (boundp 'after-focus-change-function)
+         (add-function :after after-focus-change-function #'+gc-after-focus-change)))))
+
+  (with-eval-after-load 'elpaca
+    (add-hook 'elpaca-after-init-hook '+reset-init-values))
+#+end_src
+*** UI
+Turning off these visual elements before UI initialization should speed up init.
+#+begin_src emacs-lisp :lexical t
+;;(push '(menu-bar-lines . 0) default-frame-alist)
+(push '(tool-bar-lines . 0) default-frame-alist)
+;;(push '(vertical-scroll-bars) default-frame-alist)
+#+end_src
+
+Implicitly resizing the Emacs frame adds to init time.
+Fonts larger than the system default can cause frame resizing, which adds to startup time.
+#+begin_src emacs-lisp :lexical t
+(setq frame-inhibit-implied-resize t)
+#+end_src
+
+Ignore X resources.
+#+begin_src emacs-lisp :lexical t
+(advice-add #'x-apply-session-resources :override #'ignore)
+#+end_src
+Taken from:
+
+[[https://github.com/vsemyonoff/emacsrc/blob/14649a5bafea99cc7e13e7d048e9d15aed7926ce/early-init.el]]
+
+This helps with a bug I was hitting when using =desktop-save-mode='s =desktop-read=.
+#+begin_src emacs-lisp :lexical t
+(setq desktop-restore-forces-onscreen nil)
+#+end_src
+
+*** provide early-init
+#+begin_src emacs-lisp :lexical t
+(provide 'early-init)
+;;; early-init.el ends here
+#+end_src
+
+** lexical binding
+The following line turns on lexical binding for performance reasons.
+#+begin_src emacs-lisp :lexical t
+;; -*- lexical-binding: t; -*-
+#+end_src
+** profiling
+This function displays how long Emacs took to start.
+It's a rough way of knowing when/if I need to optimize my init file.
+#+begin_src emacs-lisp :lexical t
+(add-hook 'elpaca-after-init-hook
+          (lambda ()
+            (message "Emacs loaded in %s with %d garbage collections."
+                     (format "%.2f seconds"
+                             (float-time
+                              (time-subtract (current-time) before-init-time)))
+                     gcs-done)))
+#+end_src
+We can also enable the profiler to view a report after init.
+#+begin_src emacs-lisp :lexical t :tangle no
+(profiler-start 'cpu+mem)
+(add-hook 'elpaca-after-init-hook (lambda () (profiler-stop) (profiler-report)))
+#+end_src
+** Elpaca
+#+begin_quote
+An elisp package manager
+
+https://github.com/progfolio/elpaca
+#+end_quote
+
+*** Installer
+#+begin_src emacs-lisp :lexical t
+  (defvar elpaca-installer-version 0.5)
+  (defvar elpaca-directory (expand-file-name "elpaca/" user-emacs-directory))
+  (defvar elpaca-builds-directory (expand-file-name "builds/" elpaca-directory))
+  (defvar elpaca-repos-directory (expand-file-name "repos/" elpaca-directory))
+  (defvar elpaca-order '(elpaca :repo "https://github.com/progfolio/elpaca.git"
+                                :ref nil
+                                :files (:defaults (:exclude "extensions"))
+                                :build (:not elpaca--activate-package)))
+  (let* ((repo  (expand-file-name "elpaca/" elpaca-repos-directory))
+         (build (expand-file-name "elpaca/" elpaca-builds-directory))
+         (order (cdr elpaca-order))
+         (default-directory repo))
+    (add-to-list 'load-path (if (file-exists-p build) build repo))
+    (unless (file-exists-p repo)
+      (make-directory repo t)
+      (when (< emacs-major-version 28) (require 'subr-x))
+      (condition-case-unless-debug err
+          (if-let ((buffer (pop-to-buffer-same-window "*elpaca-bootstrap*"))
+                   ((zerop (call-process "git" nil buffer t "clone"
+                                         (plist-get order :repo) repo)))
+                   ((zerop (call-process "git" nil buffer t "checkout"
+                                         (or (plist-get order :ref) "--"))))
+                   (emacs (concat invocation-directory invocation-name))
+                   ((zerop (call-process emacs nil buffer nil "-Q" "-L" "." "--batch"
+                                         "--eval" "(byte-recompile-directory \".\" 0 'force)")))
+                   ((require 'elpaca))
+                   ((elpaca-generate-autoloads "elpaca" repo)))
+              (progn (message "%s" (buffer-string)) (kill-buffer buffer))
+            (error "%s" (with-current-buffer buffer (buffer-string))))
+        ((error) (warn "%s" err) (delete-directory repo 'recursive))))
+    (unless (require 'elpaca-autoloads nil t)
+      (require 'elpaca)
+      (elpaca-generate-autoloads "elpaca" repo)
+      (load "./elpaca-autoloads")))
+  (add-hook 'after-init-hook #'elpaca-process-queues)
+  (elpaca `(,@elpaca-order))
+#+end_src
+
+** packaging
+*** use-package
+#+begin_src emacs-lisp :lexical t
+(defmacro use-feature (name &rest args)
+  "Like `use-package' but accounting for asynchronous installation.
+  NAME and ARGS are in `use-package'."
+  (declare (indent defun))
+  `(use-package ,name
+     :elpaca nil
+     ,@args))
+#+end_src
+
+#+begin_src emacs-lisp :lexical t
+(elpaca elpaca-use-package
+  (elpaca-use-package-mode)
+  (setq elpaca-use-package-by-default t))
+#+end_src
+
+Allow Elpaca to process queues up to this point
+#+begin_src emacs-lisp :lexical t
+(elpaca-wait)
+#+end_src
+
+#+begin_src emacs-lisp :lexical t
+(if debug-on-error
+    (setq use-package-verbose t
+          use-package-expand-minimally nil
+          use-package-compute-statistics t)
+  (setq use-package-verbose nil
+        use-package-expand-minimally t))
+#+end_src
+* Custom variables
+** files/paths
+#+begin_src emacs-lisp :lexical t
+(setq literate-file (concat user-emacs-directory "init.org"))
+#+end_src
 *** Garbage collector and other tweaks
 
     #+BEGIN_SRC emacs-lisp
-      ;; (add-to-list 'default-frame-alist '(menu-bar-lines . 0))
-      (add-to-list 'default-frame-alist '(tool-bar-lines . 0))
-      ;; (add-to-list 'default-frame-alist '(vertical-scroll-bars))
-      (setq frame-inhibit-implied-resize t
-            initial-major-mode 'fundamental-mode
-            gc-cons-threshold most-positive-fixnum
+      (setq initial-major-mode 'fundamental-mode
             read-process-output-max (* 1024 1024))
       (use-package gcmh
         :diminish
@@ -55,7 +247,6 @@
               gcmh-high-cons-threshold (* 16 1024 1024))
         :config
         (gcmh-mode 1))
-      (add-hook 'focus-out-hook #'garbage-collect)
       (add-to-list 'initial-frame-alist '(fullscreen . maximized))
     #+END_SRC
 
@@ -73,14 +264,16 @@
                     show-trailing-whitespace t)
     #+end_src
 
-*** Async byte-comp
+** files
 
-    #+begin_src emacs-lisp
-      (use-package async
-        :demand
-        :config
-        (async-bytecomp-package-mode 1))
-    #+end_src
+#+begin_src emacs-lisp :lexical t
+(use-feature files
+  :custom
+  (safe-local-variable-values
+   '((eval load-file "./init-dev.el")
+     (org-clean-refile-inherit-tags))
+   "Store safe local variables here instead of in emacs-custom.el"))
+#+end_src
 
 *** Enable keybinding
 
@@ -115,6 +308,7 @@
 
     #+begin_src emacs-lisp
       (use-package emacs
+        :elpaca nil
         :custom
         (desktop-save t)
         (desktop-load-locked-desktop t)
@@ -134,6 +328,18 @@
                       (rgr/restore-desktop)))))
     #+end_src
 
+** Hydra
+
+   Cool keybinding thing.
+
+   #+begin_src emacs-lisp
+     (use-package hydra)
+     (use-package use-package-hydra
+       :demand t
+       :after hydra)
+     (elpaca-wait)
+   #+end_src
+
 ** Themes
 
    #+begin_src emacs-lisp
@@ -152,23 +358,12 @@
 ** Modeline
 
    #+begin_src emacs-lisp
-     (use-package all-the-icons
-       :if (display-graphic-p))
+     (use-package all-the-icons)
      (use-package doom-modeline
        :demand
        :config
        (setq doom-modeline-minor-modes t)
        (doom-modeline-mode 1))
-   #+end_src
-
-** Hydra
-
-   Cool keybinding thing.
-
-   #+begin_src emacs-lisp
-     (use-package hydra)
-     (use-package use-package-hydra
-       :after hydra)
    #+end_src
 
 ** Midnight mode
@@ -177,10 +372,19 @@
 
    #+begin_src emacs-lisp
      (use-package midnight
+       :elpaca nil
        :defer 5
        :config
        (midnight-mode t)
        (setq clean-buffer-list-delay-general 1))
+   #+end_src
+
+** editor-config
+
+   #+begin_src emacs-lisp
+     (use-package editorconfig
+       :diminish editorconfig-mode
+       :config (editorconfig-mode t))
    #+end_src
 
 ** Line / column numbers
@@ -193,8 +397,10 @@
 ** Secrets
 
    #+begin_src emacs-lisp
-     (use-package secrets)
+     (use-package secrets
+       :elpaca nil)
      (use-package auth-source
+       :elpaca nil
        :after secrets
        :custom
        (auth-sources
@@ -210,6 +416,7 @@
 
    #+BEGIN_SRC emacs-lisp
      (use-package autorevert
+       :elpaca nil
        :config
        ;; Also auto refresh dired, but be quiet about it
        (setq global-auto-revert-non-file-buffers t)
@@ -227,7 +434,8 @@
        :config
        (setq org-log-done 'time
              org-support-shift-select t)
-       (require 'org-tempo)
+       :custom
+       (org-modules '(org-tempo))
        :hook ((org-mode . toc-org-enable))
        :bind
        (:map org-mode-map
@@ -322,10 +530,10 @@
        ("\\`/usr/share/doc/.*/copyright" . debian-copyright-mode)
        ("debian/.*README.*Debian$" . readme-debian-mode)
        ("^/usr/share/doc/.*/README.*Debian.*$" . readme-debian-mode))
-     (straight-use-package '(debian-devel :local-repo "~/src/github.com/mithrandi/debian-devel-el"
-                                          :files ("debian-devel/*.el")))
      (use-package debian-devel
-       :straight nil
+       :elpaca
+       (debian-devel :repo "~/src/github.com/mithrandi/debian-devel-el"
+                     :files ("debian-devel/*.el"))
        :bind ("C-c d" . dd-dispatch))
    #+end_src
 
@@ -349,6 +557,7 @@
      (use-package magit-delta
        :hook (magit-mode . magit-delta-mode))
      (use-package smerge-mode
+       :elpaca nil
        :config
        (defhydra smerge-hydra
          (:color pink :hint nil :post (smerge-auto-leave))
@@ -406,6 +615,7 @@
 
    #+begin_src emacs-lisp
      (use-package whitespace
+       :elpaca nil
        :defer 5
        :diminish
        (whitespace-mode
@@ -467,6 +677,12 @@
        ("C-c p" . projectile-command-map))
    #+end_src
 
+** direnv
+#+begin_src emacs-lisp
+  (use-package direnv
+   :config
+   (direnv-mode))
+#+end_src
 * Languages
 
 ** LSP
@@ -523,11 +739,6 @@
           (lsp-register-custom-settings '(("haskell.maxCompletions" 200)))))
       (use-package lsp-treemacs
         :commands lsp-treemacs-errors-list)
-      (use-package company-lsp
-        :after company
-        :config (push 'company-lsp company-backends)
-        :defer t
-        :custom (company-lsp-cache-candidates 'auto))
     #+end_src
 
 ** Lisps
@@ -665,6 +876,7 @@
 
    #+begin_src emacs-lisp
      (use-package dhall-mode
+       :mode "\\.dhall\\'"
        :config
        (setq
         ;; header-line is obsoleted by lsp-mode
@@ -672,11 +884,26 @@
        :hook (dhall-mode . lsp-deferred))
    #+end_src
 
+** nix
+
+   #+begin_src emacs-lisp
+     (use-package nix-mode
+       :mode "\\.nix\\'"
+       :hook (nix-mode . lsp-deferred))
+   #+end_src
+** auto-tangle-mode
+#+begin_src emacs-lisp :lexical t
+(use-package auto-tangle-mode
+  :elpaca (auto-tangle-mode
+           :host github
+           :repo "progfolio/auto-tangle-mode.el"
+           :local-repo "auto-tangle-mode")
+  :commands (auto-tangle-mode))
+#+end_src
 * The remaining mess
 
   #+begin_src emacs-lisp
     (use-package dash)
-    (use-package nix-mode)
     (use-package ormolu)
     (use-package terraform-mode
       :config
@@ -692,5 +919,6 @@
     #+BEGIN_SRC emacs-lisp
       (setq-default custom-file (expand-file-name "custom.el" user-emacs-directory))
       (when (file-exists-p custom-file)
-        (load custom-file))
+        (add-hook 'elpaca-after-init-hook
+                  (lambda () (load custom-file 'noerror))))
     #+END_SRC
